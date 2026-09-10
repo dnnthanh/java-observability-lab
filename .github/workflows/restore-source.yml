@@ -1,0 +1,76 @@
+name: Restore source tree
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/restore-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout bootstrap repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reassemble and validate source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d .repo-import
+          count=$(find .repo-import -maxdepth 1 -type f -name 'part-*' | wc -l)
+          echo "archive parts: $count"
+          test "$count" -eq 9
+          cat $(find .repo-import -maxdepth 1 -type f -name 'part-*' | sort) > /tmp/java-observability-lab.b64
+          base64 --decode /tmp/java-observability-lab.b64 > /tmp/java-observability-lab.tar.gz
+          gzip -t /tmp/java-observability-lab.tar.gz
+          echo "gzip integrity: PASS"
+          echo "archive entries: $(tar -tzf /tmp/java-observability-lab.tar.gz | wc -l)"
+          tar -tzf /tmp/java-observability-lab.tar.gz | sed -n '1,40p'
+
+      - name: Extract source safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/restored
+          mkdir -p /tmp/restored
+          tar -xzf /tmp/java-observability-lab.tar.gz -C /tmp/restored
+          echo "top-level restored files:"
+          find /tmp/restored -mindepth 1 -maxdepth 2 -print | sort | sed -n '1,100p'
+          echo "restored file count: $(find /tmp/restored -type f | wc -l)"
+          test "$(find /tmp/restored -type f | wc -l)" -ge 100
+          test -f /tmp/restored/pom.xml
+          test -f /tmp/restored/README.md
+          test -d /tmp/restored/services
+          test -d /tmp/restored/deploy
+          test -d /tmp/restored/incidents
+
+      - name: Materialize repository source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a /tmp/restored/. .
+          test -f pom.xml
+          test -f README.md
+          test -d services
+          test -d deploy
+          test -d incidents
+          echo "materialized file count: $(find . -path ./.git -prune -o -type f -print | wc -l)"
+
+      - name: Commit restored source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git status --short | sed -n '1,200p'
+          git commit -m 'feat: materialize java observability lab source'
+          git push origin HEAD:master
