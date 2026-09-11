@@ -5,18 +5,20 @@ metadata:
   namespace: observability
 data:
   tempo.yaml: |
+    stream_over_http_enabled: true
+
     server:
       http_listen_port: 3200
+
     distributor:
       receivers:
         otlp:
           protocols:
             grpc:
-              endpoint: 0.0.0.0:4317
+              endpoint: "0.0.0.0:4317"
             http:
-              endpoint: 0.0.0.0:4318
-    ingester:
-      max_block_duration: 5m
+              endpoint: "0.0.0.0:4318"
+
     storage:
       trace:
         backend: local
@@ -24,6 +26,9 @@ data:
           path: /tmp/tempo/wal
         local:
           path: /tmp/tempo/blocks
+
+    usage_report:
+      reporting_enabled: false
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -37,7 +42,7 @@ spec:
       containers:
         - name: tempo
           image: grafana/tempo:3.0.3
-          args: ["-config.file=/etc/tempo/tempo.yaml"]
+          args: ["-target=all", "-config.file=/etc/tempo/tempo.yaml"]
           ports:
             - {containerPort: 3200, name: http}
             - {containerPort: 4317, name: otlp-grpc}
