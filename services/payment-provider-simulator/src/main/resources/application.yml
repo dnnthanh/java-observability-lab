@@ -23,6 +23,9 @@ management:
         liveness:
           include: livenessState,labLiveness
   metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
     tags:
       service: ${spring.application.name}
   tracing:

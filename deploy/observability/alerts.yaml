@@ -1,0 +1,56 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: java-observability-lab
+  namespace: observability
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: lab.kubernetes
+      rules:
+        - alert: DeploymentReplicaMismatch
+          expr: kube_deployment_status_replicas_ready{namespace="lab"} < kube_deployment_spec_replicas{namespace="lab"}
+          for: 2m
+          labels: {severity: warning}
+          annotations:
+            summary: "Deployment has fewer Ready replicas than desired"
+        - alert: PodRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace="lab"}[5m]) > 0
+          labels: {severity: warning}
+          annotations:
+            summary: "A lab pod restarted in the last five minutes"
+    - name: lab.application
+      rules:
+        - alert: HighHttp5xxRate
+          expr: |
+            sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_server_requests_seconds_count[5m])), 0.001)
+            > 0.05
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "More than 5% of HTTP requests are 5xx"
+        - alert: HikariPoolSaturation
+          expr: hikaricp_connections_active / clamp_min(hikaricp_connections_max, 1) > 0.90
+          for: 2m
+          labels: {severity: warning}
+          annotations:
+            summary: "Hikari pool is over 90% utilized"
+        - alert: HighJvmHeapUsage
+          expr: |
+            sum by (pod) (jvm_memory_used_bytes{area="heap"})
+            /
+            clamp_min(sum by (pod) (jvm_memory_max_bytes{area="heap"}), 1)
+            > 0.85
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "JVM heap usage is above 85%"
+        - alert: HighKafkaConsumerLag
+          expr: kafka_consumer_fetch_manager_records_lag_max > 10000
+          for: 2m
+          labels: {severity: warning}
+          annotations:
+            summary: "Kafka consumer lag is high"

@@ -8,21 +8,37 @@ metadata:
 data:
   java-observability.json: |
     {
-      "title": "Java Observability Lab - Kubernetes & App",
+      "title": "Java Observability Lab - Production Troubleshooting",
       "uid": "java-observability-lab",
       "schemaVersion": 39,
-      "version": 1,
+      "version": 2,
+      "refresh": "10s",
       "time": {"from":"now-30m","to":"now"},
       "panels": [
-        {"type":"stat","title":"Ready Pods","gridPos":{"x":0,"y":0,"w":6,"h":4},
+        {"type":"stat","title":"Ready Pods","gridPos":{"x":0,"y":0,"w":4,"h":4},
          "targets":[{"expr":"sum(kube_pod_status_ready{namespace=\"lab\",condition=\"true\"})","refId":"A"}]},
-        {"type":"timeseries","title":"Pod Restarts","gridPos":{"x":6,"y":0,"w":9,"h":8},
-         "targets":[{"expr":"sum by (pod) (kube_pod_container_status_restarts_total{namespace=\"lab\"})","refId":"A"}]},
-        {"type":"timeseries","title":"HTTP Request Rate","gridPos":{"x":15,"y":0,"w":9,"h":8},
-         "targets":[{"expr":"sum by (service) (rate(http_server_requests_seconds_count[1m]))","refId":"A"}]},
-        {"type":"timeseries","title":"HTTP p95","gridPos":{"x":0,"y":8,"w":12,"h":8},
-         "targets":[{"expr":"histogram_quantile(0.95, sum by (le,service) (rate(http_server_requests_seconds_bucket[5m])))","refId":"A"}]},
-        {"type":"timeseries","title":"JVM Heap","gridPos":{"x":12,"y":8,"w":12,"h":8},
-         "targets":[{"expr":"sum by (pod) (jvm_memory_used_bytes{area=\"heap\"})","refId":"A"}]}
+        {"type":"stat","title":"Not Ready Pods","gridPos":{"x":4,"y":0,"w":4,"h":4},
+         "targets":[{"expr":"sum(1 - kube_pod_status_ready{namespace=\"lab\",condition=\"true\"})","refId":"A"}]},
+        {"type":"timeseries","title":"Pod Ready State","gridPos":{"x":8,"y":0,"w":8,"h":8},
+         "targets":[{"expr":"kube_pod_status_ready{namespace=\"lab\",condition=\"true\"}","legendFormat":"{{pod}}","refId":"A"}]},
+        {"type":"timeseries","title":"Pod Restarts","gridPos":{"x":16,"y":0,"w":8,"h":8},
+         "targets":[{"expr":"sum by (pod) (kube_pod_container_status_restarts_total{namespace=\"lab\"})","legendFormat":"{{pod}}","refId":"A"}]},
+        {"type":"timeseries","title":"Pod Age (seconds)","gridPos":{"x":0,"y":8,"w":8,"h":8},
+         "targets":[{"expr":"time() - kube_pod_start_time{namespace=\"lab\"}","legendFormat":"{{pod}}","refId":"A"}]},
+        {"type":"timeseries","title":"HTTP Request Rate","gridPos":{"x":8,"y":8,"w":8,"h":8},
+         "targets":[{"expr":"sum by (service) (rate(http_server_requests_seconds_count[1m]))","legendFormat":"{{service}}","refId":"A"}]},
+        {"type":"timeseries","title":"HTTP 5xx Rate","gridPos":{"x":16,"y":8,"w":8,"h":8},
+         "targets":[{"expr":"sum by (service) (rate(http_server_requests_seconds_count{status=~\"5..\"}[1m]))","legendFormat":"{{service}}","refId":"A"}]},
+        {"type":"timeseries","title":"HTTP p95","gridPos":{"x":0,"y":16,"w":12,"h":8},
+         "targets":[{"expr":"histogram_quantile(0.95, sum by (le,service) (rate(http_server_requests_seconds_bucket[5m])))","legendFormat":"{{service}}","refId":"A"}]},
+        {"type":"timeseries","title":"JVM Heap","gridPos":{"x":12,"y":16,"w":12,"h":8},
+         "targets":[{"expr":"sum by (pod) (jvm_memory_used_bytes{area=\"heap\"})","legendFormat":"{{pod}}","refId":"A"}]},
+        {"type":"timeseries","title":"Hikari Active / Pending","gridPos":{"x":0,"y":24,"w":12,"h":8},
+         "targets":[
+           {"expr":"sum by (pod) (hikaricp_connections_active)","legendFormat":"active {{pod}}","refId":"A"},
+           {"expr":"sum by (pod) (hikaricp_connections_pending)","legendFormat":"pending {{pod}}","refId":"B"}
+         ]},
+        {"type":"timeseries","title":"Kafka Consumer Lag Max","gridPos":{"x":12,"y":24,"w":12,"h":8},
+         "targets":[{"expr":"kafka_consumer_fetch_manager_records_lag_max","legendFormat":"{{service}} {{client_id}}","refId":"A"}]}
       ]
     }

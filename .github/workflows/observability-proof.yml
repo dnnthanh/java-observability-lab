@@ -1,0 +1,65 @@
+name: Full Observability Proof
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'common/**'
+      - 'services/**'
+      - 'deploy/observability/**'
+      - 'scripts/monitoring-up.sh'
+      - 'scripts/tracing-up.sh'
+      - 'scripts/logging-up.sh'
+      - 'scripts/verify-*.sh'
+      - '.github/workflows/observability-proof.yml'
+      - 'pom.xml'
+      - 'Dockerfile'
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kind
+        run: |
+          curl -Lo kind https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
+          chmod +x kind
+          sudo mv kind /usr/local/bin/kind
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.18.6
+      - name: Core baseline
+        run: ./scripts/lab.sh up core
+      - name: Reduce app replicas for full-stack CI memory budget
+        run: |
+          for d in edge-service order-service inventory-service payment-worker payment-provider-simulator; do
+            kubectl -n lab scale deployment/$d --replicas=1
+            kubectl -n lab rollout status deployment/$d --timeout=180s
+          done
+      - name: Metrics and Grafana
+        run: |
+          ./scripts/monitoring-up.sh
+          ./scripts/verify-metrics.sh
+      - name: Tracing and Tempo
+        run: |
+          ./scripts/tracing-up.sh
+          ./scripts/verify-tracing.sh
+      - name: Centralized logging and ELK
+        run: |
+          ./scripts/logging-up.sh
+          ./scripts/verify-logging.sh
+      - name: Evidence
+        if: always()
+        run: |
+          ./scripts/evidence.sh || true
+          kubectl get pods -A -o wide > evidence/all-pods.txt || true
+          kubectl get events -A --sort-by=.lastTimestamp > evidence/all-events.txt || true
+          kubectl -n observability get all > evidence/observability.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: observability-proof-evidence
+          path: evidence/
+          if-no-files-found: ignore

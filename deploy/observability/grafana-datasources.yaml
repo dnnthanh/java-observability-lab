@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-extra-datasources
+  namespace: observability
+  labels:
+    grafana_datasource: "1"
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Tempo
+        uid: tempo
+        type: tempo
+        access: proxy
+        url: http://tempo:3200
+        isDefault: false
+        editable: true
+        jsonData:
+          nodeGraph:
+            enabled: true
+          tracesToLogsV2:
+            datasourceUid: elasticsearch
+            spanStartTimeShift: "-2m"
+            spanEndTimeShift: "2m"
+            filterByTraceID: true
+            filterBySpanID: true
+      - name: Elasticsearch
+        uid: elasticsearch
+        type: elasticsearch
+        access: proxy
+        url: http://elasticsearch:9200
+        isDefault: false
+        editable: true
+        jsonData:
+          index: "lab-logs-*"
+          timeField: "@timestamp"

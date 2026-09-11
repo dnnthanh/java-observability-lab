@@ -4,7 +4,37 @@ metadata: {name: logstash-config, namespace: observability}
 data:
   logstash.conf: |
     input { beats { port => 5044 } }
-    output { elasticsearch { hosts => ["http://elasticsearch:9200"] index => "lab-logs-%{+YYYY.MM.dd}" } }
+    output {
+      elasticsearch {
+        hosts => ["http://elasticsearch:9200"]
+        index => "lab-logs-%{+YYYY.MM.dd}"
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: filebeat-config, namespace: observability}
+data:
+  filebeat.yml: |
+    filebeat.inputs:
+      - type: filestream
+        id: lab-kubernetes-containers
+        enabled: true
+        prospector.scanner.symlinks: true
+        close.on_state_change.removed: false
+        paths:
+          - /var/log/containers/*_lab_*.log
+        parsers:
+          - container: ~
+        processors:
+          - add_kubernetes_metadata:
+              host: ${NODE_NAME}
+              matchers:
+                - logs_path:
+                    logs_path: "/var/log/containers/"
+    output.logstash:
+      hosts: ["logstash:5044"]
+    logging.level: info
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -23,9 +53,14 @@ spec:
             - {name: xpack.security.enabled, value: "false"}
             - {name: ES_JAVA_OPTS, value: "-Xms512m -Xmx512m"}
           ports: [{containerPort: 9200}]
+          readinessProbe:
+            httpGet: {path: /_cluster/health, port: 9200}
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 30
           resources:
-            requests: {memory: 768Mi}
-            limits: {memory: 1Gi}
+            requests: {cpu: 100m, memory: 768Mi}
+            limits: {cpu: "1", memory: 1Gi}
 ---
 apiVersion: v1
 kind: Service
@@ -48,6 +83,14 @@ spec:
           image: docker.elastic.co/logstash/logstash:9.5.3
           env: [{name: LS_JAVA_OPTS, value: "-Xms256m -Xmx256m"}]
           ports: [{containerPort: 5044}]
+          readinessProbe:
+            tcpSocket: {port: 5044}
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests: {cpu: 50m, memory: 384Mi}
+            limits: {cpu: 500m, memory: 768Mi}
           volumeMounts: [{name: config, mountPath: /usr/share/logstash/pipeline}]
       volumes: [{name: config, configMap: {name: logstash-config}}]
 ---
@@ -72,6 +115,14 @@ spec:
           image: docker.elastic.co/kibana/kibana:9.5.3
           env: [{name: ELASTICSEARCH_HOSTS, value: "http://elasticsearch:9200"}]
           ports: [{containerPort: 5601}]
+          readinessProbe:
+            httpGet: {path: /api/status, port: 5601}
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            failureThreshold: 60
+          resources:
+            requests: {cpu: 50m, memory: 384Mi}
+            limits: {cpu: "1", memory: 768Mi}
 ---
 apiVersion: v1
 kind: Service
@@ -112,18 +163,21 @@ spec:
       containers:
         - name: filebeat
           image: docker.elastic.co/beats/filebeat:9.5.3
-          args:
-            - "-e"
-            - "-E"
-            - "output.logstash.hosts=['logstash:5044']"
-            - "-E"
-            - "filebeat.autodiscover.providers.0.type=kubernetes"
-            - "-E"
-            - "filebeat.autodiscover.providers.0.hints.enabled=true"
+          args: ["-e", "-c", "/usr/share/filebeat/filebeat.yml", "--strict.perms=false"]
+          env:
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
           securityContext: {runAsUser: 0}
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 256Mi}
           volumeMounts:
+            - {name: config, mountPath: /usr/share/filebeat/filebeat.yml, subPath: filebeat.yml, readOnly: true}
             - {name: varlogcontainers, mountPath: /var/log/containers, readOnly: true}
             - {name: varlogpods, mountPath: /var/log/pods, readOnly: true}
+            - {name: data, mountPath: /usr/share/filebeat/data}
       volumes:
+        - {name: config, configMap: {name: filebeat-config}}
         - {name: varlogcontainers, hostPath: {path: /var/log/containers}}
         - {name: varlogpods, hostPath: {path: /var/log/pods}}
+        - {name: data, emptyDir: {}}
