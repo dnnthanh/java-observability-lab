@@ -3,6 +3,20 @@ on:
   workflow_dispatch:
   push:
     branches: [master]
+    paths:
+      - 'common/**'
+      - 'services/**'
+      - 'deploy/core/**'
+      - 'deploy/kind/**'
+      - 'scripts/build-images.sh'
+      - 'scripts/create-cluster.sh'
+      - 'scripts/load-images.sh'
+      - 'scripts/deploy-core.sh'
+      - 'scripts/verify-core.sh'
+      - 'scripts/lab.sh'
+      - '.github/workflows/kind-smoke.yml'
+      - 'Dockerfile'
+      - 'pom.xml'
 jobs:
   kind:
     runs-on: ubuntu-latest

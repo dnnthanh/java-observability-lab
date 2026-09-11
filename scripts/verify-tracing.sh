@@ -7,19 +7,17 @@ cleanup() {
 trap cleanup EXIT
 
 payload='{"customerId":"TRACE","productCode":"SKU-1","quantity":1,"amount":12345}'
-curl -fsS -X POST http://localhost:8080/api/orders -H 'content-type: application/json' -d "$payload" >/tmp/trace-order.json
+curl -fsS -X POST http://localhost:8080/api/orders   -H 'content-type: application/json' -d "$payload" >/tmp/trace-order.json
 
 kubectl -n observability port-forward svc/tempo 13200:3200 >/tmp/tempo-pf.log 2>&1 &
 TEMPO_PF=$!
-for i in {1..60}; do
-  curl -fsS http://127.0.0.1:13200/ready >/dev/null 2>&1 && break
-  sleep 2
-done
+sleep 2
 
 search_service() {
-  local service="$1" out="/tmp/tempo-${service}.json"
+  local service="$1"
+  local out="/tmp/tempo-${service}.json"
   for i in {1..45}; do
-    curl -fsSG http://127.0.0.1:13200/api/search       --data-urlencode "q={ resource.service.name = \"$service\" }"       --data-urlencode "limit=20" > "$out" || true
+    curl -fsSG http://127.0.0.1:13200/api/search       --data-urlencode "q={ resource.service.name = \"$service\" }"       --data-urlencode "limit=50" > "$out" || true
     if python3 - "$out" <<'PY'
 import json,sys
 try:
@@ -42,5 +40,18 @@ PY
 search_service edge-service
 search_service order-service
 search_service inventory-service
+
+python3 - /tmp/tempo-edge-service.json /tmp/tempo-order-service.json /tmp/tempo-inventory-service.json <<'PY'
+import json,sys
+sets=[]
+for path in sys.argv[1:]:
+    data=json.load(open(path))
+    ids={t.get("traceID") for t in data.get("traces",[]) if t.get("traceID")}
+    sets.append(ids)
+common=set.intersection(*sets)
+if not common:
+    raise SystemExit("services have traces, but no common trace ID across Edge -> Order -> Inventory")
+print("cross-service trace: PASS", next(iter(common)))
+PY
 
 echo "TRACING PROOF PASS"

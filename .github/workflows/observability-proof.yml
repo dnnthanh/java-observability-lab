@@ -38,15 +38,21 @@ jobs:
             kubectl -n lab scale deployment/$d --replicas=1
             kubectl -n lab rollout status deployment/$d --timeout=180s
           done
-      - name: Metrics and Grafana
+      - id: metrics
+        name: Metrics and Grafana
+        continue-on-error: true
         run: |
           ./scripts/monitoring-up.sh
           ./scripts/verify-metrics.sh
-      - name: Tracing and Tempo
+      - id: tracing
+        name: Tracing and Tempo
+        continue-on-error: true
         run: |
           ./scripts/tracing-up.sh
           ./scripts/verify-tracing.sh
-      - name: Centralized logging and ELK
+      - id: logging
+        name: Centralized logging and ELK
+        continue-on-error: true
         run: |
           ./scripts/logging-up.sh
           ./scripts/verify-logging.sh
@@ -57,9 +63,22 @@ jobs:
           kubectl get pods -A -o wide > evidence/all-pods.txt || true
           kubectl get events -A --sort-by=.lastTimestamp > evidence/all-events.txt || true
           kubectl -n observability get all > evidence/observability.txt || true
+          kubectl -n observability logs deployment/otel-collector --tail=200 > evidence/otel-collector.log 2>&1 || true
+          kubectl -n observability logs deployment/tempo --tail=200 > evidence/tempo.log 2>&1 || true
+          kubectl -n observability logs daemonset/filebeat --tail=200 > evidence/filebeat.log 2>&1 || true
+          kubectl -n observability logs deployment/logstash --tail=200 > evidence/logstash.log 2>&1 || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: observability-proof-evidence
           path: evidence/
           if-no-files-found: ignore
+      - name: Assert all observability pillars
+        if: always()
+        run: |
+          echo "metrics=${{ steps.metrics.outcome }}"
+          echo "tracing=${{ steps.tracing.outcome }}"
+          echo "logging=${{ steps.logging.outcome }}"
+          test "${{ steps.metrics.outcome }}" = "success"
+          test "${{ steps.tracing.outcome }}" = "success"
+          test "${{ steps.logging.outcome }}" = "success"
