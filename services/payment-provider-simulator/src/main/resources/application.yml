@@ -1,0 +1,36 @@
+server:
+  port: 8080
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 40
+spring:
+  application:
+    name: payment-provider-simulator
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,threaddump
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,labReadiness
+        liveness:
+          include: livenessState,labLiveness
+  metrics:
+    tags:
+      service: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://otel-collector.observability.svc.cluster.local:4318/v1/traces}
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} level=%p service=${spring.application.name} trace_id=%X{traceId:-} span_id=%X{spanId:-} thread=%t logger=%logger{36} msg=%m%n"

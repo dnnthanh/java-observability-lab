@@ -1,0 +1,53 @@
+server:
+  port: 8080
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 40
+spring:
+  application:
+    name: order-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://postgres:5432/lab}
+    username: ${DB_USER:lab}
+    password: ${DB_PASSWORD:lab}
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 3000
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:kafka:9092}
+    consumer:
+      auto-offset-reset: earliest
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    template:
+      observation-enabled: true
+    listener:
+      observation-enabled: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,threaddump
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,labReadiness
+        liveness:
+          include: livenessState,labLiveness
+  metrics:
+    tags:
+      service: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://otel-collector.observability.svc.cluster.local:4318/v1/traces}
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} level=%p service=${spring.application.name} trace_id=%X{traceId:-} span_id=%X{spanId:-} thread=%t logger=%logger{36} msg=%m%n"
