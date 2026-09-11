@@ -19,7 +19,7 @@ on:
 jobs:
   proof:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Install kind
@@ -67,6 +67,9 @@ jobs:
           kubectl -n observability logs deployment/tempo --tail=200 > evidence/tempo.log 2>&1 || true
           kubectl -n observability logs daemonset/filebeat --tail=200 > evidence/filebeat.log 2>&1 || true
           kubectl -n observability logs deployment/logstash --tail=200 > evidence/logstash.log 2>&1 || true
+          kubectl -n observability logs deployment/kibana --tail=200 > evidence/kibana.log 2>&1 || true
+          kubectl -n observability logs deployment/kibana --previous --tail=200 > evidence/kibana-previous.log 2>&1 || true
+          kubectl -n observability get pod -l app=kibana -o json > evidence/kibana-pod.json || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:

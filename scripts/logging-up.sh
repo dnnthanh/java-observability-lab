@@ -8,6 +8,6 @@ kubectl apply -f "$ROOT/deploy/observability/elk.yaml"
 kubectl -n observability rollout status deployment/elasticsearch --timeout=480s
 kubectl -n observability rollout status deployment/logstash --timeout=480s
 kubectl -n observability rollout status daemonset/filebeat --timeout=300s
-kubectl -n observability rollout status deployment/kibana --timeout=600s
+kubectl -n observability rollout status deployment/kibana --timeout=900s
 
 echo "Kibana: http://localhost:5601"

@@ -12,15 +12,18 @@ data:
         otlp:
           protocols:
             grpc:
+              endpoint: 0.0.0.0:4317
             http:
+              endpoint: 0.0.0.0:4318
+    ingester:
+      max_block_duration: 5m
     storage:
       trace:
         backend: local
+        wal:
+          path: /tmp/tempo/wal
         local:
           path: /tmp/tempo/blocks
-    compactor:
-      compaction:
-        block_retention: 24h
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -39,6 +42,19 @@ spec:
             - {containerPort: 3200, name: http}
             - {containerPort: 4317, name: otlp-grpc}
             - {containerPort: 4318, name: otlp-http}
+          readinessProbe:
+            httpGet: {path: /ready, port: 3200}
+            initialDelaySeconds: 3
+            periodSeconds: 3
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /ready, port: 3200}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
           volumeMounts:
             - {name: config, mountPath: /etc/tempo}
       volumes:
@@ -66,11 +82,13 @@ data:
       otlp:
         protocols:
           grpc:
+            endpoint: 0.0.0.0:4317
           http:
+            endpoint: 0.0.0.0:4318
     processors:
       batch:
     exporters:
-      otlp/tempo:
+      otlp_grpc/tempo:
         endpoint: tempo:4317
         tls:
           insecure: true
@@ -79,7 +97,7 @@ data:
         traces:
           receivers: [otlp]
           processors: [batch]
-          exporters: [otlp/tempo]
+          exporters: [otlp_grpc/tempo]
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -95,8 +113,11 @@ spec:
           image: otel/opentelemetry-collector-contrib:0.160.0
           args: ["--config=/etc/otel/config.yaml"]
           ports:
-            - {containerPort: 4317}
-            - {containerPort: 4318}
+            - {containerPort: 4317, name: otlp-grpc}
+            - {containerPort: 4318, name: otlp-http}
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
           volumeMounts:
             - {name: config, mountPath: /etc/otel}
       volumes:

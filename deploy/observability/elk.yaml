@@ -106,6 +106,7 @@ kind: Deployment
 metadata: {name: kibana, namespace: observability}
 spec:
   replicas: 1
+  progressDeadlineSeconds: 900
   selector: {matchLabels: {app: kibana}}
   template:
     metadata: {labels: {app: kibana}}
@@ -113,16 +114,19 @@ spec:
       containers:
         - name: kibana
           image: docker.elastic.co/kibana/kibana:9.5.3
-          env: [{name: ELASTICSEARCH_HOSTS, value: "http://elasticsearch:9200"}]
+          env:
+            - {name: ELASTICSEARCH_HOSTS, value: "http://elasticsearch:9200"}
+            - {name: NODE_OPTIONS, value: "--max-old-space-size=1024"}
           ports: [{containerPort: 5601}]
           readinessProbe:
             httpGet: {path: /api/status, port: 5601}
-            initialDelaySeconds: 30
-            periodSeconds: 5
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 60
           resources:
-            requests: {cpu: 50m, memory: 384Mi}
-            limits: {cpu: "1", memory: 768Mi}
+            requests: {cpu: 50m, memory: 768Mi}
+            limits: {cpu: "1", memory: 1536Mi}
 ---
 apiVersion: v1
 kind: Service
