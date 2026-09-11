@@ -1,0 +1,34 @@
+name: kind Runtime Smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+jobs:
+  kind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kind
+        run: |
+          curl -Lo kind https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
+          chmod +x kind
+          sudo mv kind /usr/local/bin/kind
+      - name: Build and deploy
+        run: ./scripts/lab.sh up core
+      - name: Verify end to end
+        run: ./scripts/verify-core.sh
+      - name: Evidence on failure
+        if: failure()
+        run: |
+          ./scripts/evidence.sh || true
+          kubectl -n lab get all || true
+          for d in edge-service order-service inventory-service payment-worker payment-provider-simulator; do
+            kubectl -n lab logs deploy/$d --tail=200 || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kind-evidence
+          path: evidence/
+          if-no-files-found: ignore

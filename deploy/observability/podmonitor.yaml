@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: lab-apps
+  namespace: observability
+  labels:
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [lab]
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: java-observability-lab
+  podMetricsEndpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s

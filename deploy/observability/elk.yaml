@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: logstash-config, namespace: observability}
+data:
+  logstash.conf: |
+    input { beats { port => 5044 } }
+    output { elasticsearch { hosts => ["http://elasticsearch:9200"] index => "lab-logs-%{+YYYY.MM.dd}" } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: elasticsearch, namespace: observability}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: elasticsearch}}
+  template:
+    metadata: {labels: {app: elasticsearch}}
+    spec:
+      containers:
+        - name: elasticsearch
+          image: docker.elastic.co/elasticsearch/elasticsearch:9.5.3
+          env:
+            - {name: discovery.type, value: single-node}
+            - {name: xpack.security.enabled, value: "false"}
+            - {name: ES_JAVA_OPTS, value: "-Xms512m -Xmx512m"}
+          ports: [{containerPort: 9200}]
+          resources:
+            requests: {memory: 768Mi}
+            limits: {memory: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: elasticsearch, namespace: observability}
+spec:
+  selector: {app: elasticsearch}
+  ports: [{port: 9200, targetPort: 9200}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: logstash, namespace: observability}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: logstash}}
+  template:
+    metadata: {labels: {app: logstash}}
+    spec:
+      containers:
+        - name: logstash
+          image: docker.elastic.co/logstash/logstash:9.5.3
+          env: [{name: LS_JAVA_OPTS, value: "-Xms256m -Xmx256m"}]
+          ports: [{containerPort: 5044}]
+          volumeMounts: [{name: config, mountPath: /usr/share/logstash/pipeline}]
+      volumes: [{name: config, configMap: {name: logstash-config}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: logstash, namespace: observability}
+spec:
+  selector: {app: logstash}
+  ports: [{port: 5044, targetPort: 5044}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: kibana, namespace: observability}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: kibana}}
+  template:
+    metadata: {labels: {app: kibana}}
+    spec:
+      containers:
+        - name: kibana
+          image: docker.elastic.co/kibana/kibana:9.5.3
+          env: [{name: ELASTICSEARCH_HOSTS, value: "http://elasticsearch:9200"}]
+          ports: [{containerPort: 5601}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: kibana, namespace: observability}
+spec:
+  type: NodePort
+  selector: {app: kibana}
+  ports: [{port: 5601, targetPort: 5601, nodePort: 30561}]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: filebeat, namespace: observability}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: filebeat-lab}
+rules:
+  - apiGroups: [""]
+    resources: ["pods","namespaces","nodes"]
+    verbs: ["get","list","watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: filebeat-lab}
+subjects:
+  - {kind: ServiceAccount, name: filebeat, namespace: observability}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: filebeat-lab}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: filebeat, namespace: observability}
+spec:
+  selector: {matchLabels: {app: filebeat}}
+  template:
+    metadata: {labels: {app: filebeat}}
+    spec:
+      serviceAccountName: filebeat
+      containers:
+        - name: filebeat
+          image: docker.elastic.co/beats/filebeat:9.5.3
+          args:
+            - "-e"
+            - "-E"
+            - "output.logstash.hosts=['logstash:5044']"
+            - "-E"
+            - "filebeat.autodiscover.providers.0.type=kubernetes"
+            - "-E"
+            - "filebeat.autodiscover.providers.0.hints.enabled=true"
+          securityContext: {runAsUser: 0}
+          volumeMounts:
+            - {name: varlogcontainers, mountPath: /var/log/containers, readOnly: true}
+            - {name: varlogpods, mountPath: /var/log/pods, readOnly: true}
+      volumes:
+        - {name: varlogcontainers, hostPath: {path: /var/log/containers}}
+        - {name: varlogpods, hostPath: {path: /var/log/pods}}

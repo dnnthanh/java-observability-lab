@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: lab
+data:
+  001-init.sql: |
+    create table if not exists inventory(
+      product_code varchar(64) primary key,
+      quantity integer not null
+    );
+    insert into inventory(product_code,quantity) values ('SKU-1',100000)
+    on conflict(product_code) do nothing;
+    create table if not exists orders(
+      id varchar(64) primary key,
+      customer_id varchar(64),
+      product_code varchar(64),
+      quantity integer,
+      amount bigint,
+      status varchar(32),
+      created_at timestamptz
+    );
+    create table if not exists payments(
+      order_id varchar(64) primary key,
+      amount bigint,
+      status varchar(32),
+      updated_at timestamptz
+    );
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: postgres}
+  template:
+    metadata:
+      labels: {app: postgres}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          env:
+            - {name: POSTGRES_DB, value: lab}
+            - {name: POSTGRES_USER, value: lab}
+            - {name: POSTGRES_PASSWORD, value: lab}
+          ports: [{containerPort: 5432}]
+          readinessProbe:
+            exec: {command: ["pg_isready","-U","lab","-d","lab"]}
+            initialDelaySeconds: 5
+            periodSeconds: 3
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          volumeMounts:
+            - {name: init, mountPath: /docker-entrypoint-initdb.d}
+      volumes:
+        - name: init
+          configMap: {name: postgres-init}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: lab
+spec:
+  selector: {app: postgres}
+  ports:
+    - {port: 5432, targetPort: 5432}
